@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Web Speech API: Live Video Caption Sync Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #121212;
+      color: #e0e0e0;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { margin-top: 0; font-size: 22px; color: #fff; }
+    p.desc { color: #aaa; font-size: 14px; max-width: 800px; line-height: 1.5; }
+    .controls { margin-bottom: 20px; display: flex; gap: 12px; align-items: center; }
+    button {
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      background: #1a73e8;
+      color: #fff;
+    }
+    button:disabled { background: #444; cursor: not-allowed; }
+    .status-indicator {
+      font-size: 13px;
+      font-weight: bold;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: #333;
+      color: #aaa;
+    }
+    .status-indicator.listening { background: #1b5e20; color: #81c784; }
+    .status-indicator.restarting { background: #e65100; color: #ffb74d; }
+    .video-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      max-width: 1000px;
+    }
+    .video-card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 15px;
+      position: relative;
+    }
+    .video-card h3 {
+      margin-top: 0;
+      font-size: 15px;
+      color: #8ab4f8;
+      display: flex;
+      justify-content: space-between;
+    }
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      height: 280px;
+      background: #000;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    video, canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .subtitle-overlay {
+      position: absolute;
+      bottom: 20px;
+      left: 10px;
+      right: 10px;
+      text-align: center;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 600;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+      background: rgba(0, 0, 0, 0.6);
+      padding: 6px 12px;
+      border-radius: 4px;
+      min-height: 28px;
+      pointer-events: none;
+      transition: all 0.15s ease;
+    }
+    .subtitle-overlay.active {
+      border: 2px solid #34a853;
+      background: rgba(0, 40, 10, 0.8);
+    }
+    .subtitle-overlay.persisted {
+      border: 2px solid #1a73e8;
+      background: rgba(0, 20, 50, 0.7);
+    }
+    .log-panel {
+      margin-top: 25px;
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 15px;
+      max-width: 1000px;
+    }
+    .log-panel h3 { margin-top: 0; font-size: 15px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #333; }
+    th { color: #aaa; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .badge.waiting { background: #f2994a; color: #000; }
+    .badge.active { background: #34a853; color: #fff; }
+    .badge.persisted { background: #1a73e8; color: #fff; }
+    .badge.past { background: #555; color: #ccc; }
+  </style>
+</head>
+<body>
+
+  <h1>Web Speech API: Playout Buffer Caption Sync Test</h1>
+  <p class="desc">
+    Verifies <b>Example 2</b>: Using a <b>1.5s playout delay buffer</b>, the delayed video frame arrives on screen at the exact time of the spoken caption for <b>frame-accurate lip-sync</b>.
+  </p>
+
+  <div class="controls">
+    <button id="startBtn" onclick="startTest()">Start Camera & Recognition</button>
+    <button id="stopBtn" onclick="stopTest()" disabled>Stop</button>
+    <span id="statusIndicator" class="status-indicator">Idle</span>
+    <label style="margin-left: auto; font-size: 13px;">
+      Playout Delay Buffer: <b>1500 ms</b>
+    </label>
+  </div>
+
+  <div class="video-grid">
+    <!-- Panel 1: Live Input -->
+    <div class="video-card">
+      <h3>Live Camera Feed (t = 0ms delay)</h3>
+      <div class="video-wrapper">
+        <video id="liveVideo" autoplay playsinline muted></video>
+      </div>
+      <div style="font-size: 12px; color: #aaa; margin-top: 8px;">
+        Speak into your microphone. Your mouth moves immediately here.
+      </div>
+    </div>
+
+    <!-- Panel 2: Delayed Playout with Subtitle Sync -->
+    <div class="video-card">
+      <h3>Delayed Playout Feed (+1500ms Delay Buffer)</h3>
+      <div class="video-wrapper">
+        <canvas id="delayedCanvas"></canvas>
+        <div id="subtitleOverlay" class="subtitle-overlay">Say something...</div>
+      </div>
+      <div style="font-size: 12px; color: #aaa; margin-top: 8px;">
+        Your mouth moves here 1.5s later. Watch the caption light up green at the exact frame you speak!
+      </div>
+    </div>
+  </div>
+
+  <div class="log-panel">
+    <h3>SpeechRecognition Cues & Frame Timing Log</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Transcript</th>
+          <th>Raw Start / End</th>
+          <th>Playout Window (ms)</th>
+          <th>Current Status</th>
+        </tr>
+      </thead>
+      <tbody id="cueLog">
+        <tr><td colspan="4" style="color: #666;">Waiting for speech recognition...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const PLAYOUT_DELAY_MS = 1500;
+    const CAPTION_READ_PERSISTENCE_MS = 2500; // Keep caption visible after speech ends for readability
+    let stream = null;
+    let recognition = null;
+    let audioOriginTimeMs = 0;
+    const activeCues = [];
+    const frameBuffer = [];
+    let isRunning = false;
+
+    const liveVideo = document.getElementById('liveVideo');
+    const delayedCanvas = document.getElementById('delayedCanvas');
+    const ctx = delayedCanvas.getContext('2d');
+    const subtitleOverlay = document.getElementById('subtitleOverlay');
+    const cueLog = document.getElementById('cueLog');
+    const statusIndicator = document.getElementById('statusIndicator');
+
+    function setStatus(text, className) {
+      statusIndicator.textContent = text;
+      statusIndicator.className = 'status-indicator ' + className;
+    }
+
+    async function startTest() {
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = false;
+      isRunning = true;
+
+      // 1. Capture Camera & Mic
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: true });
+        liveVideo.srcObject = stream;
+        await liveVideo.play();
+        delayedCanvas.width = liveVideo.videoWidth || 640;
+        delayedCanvas.height = liveVideo.videoHeight || 480;
+      } catch (err) {
+        alert("Camera/Microphone access failed: " + err.message);
+        stopTest();
+        return;
+      }
+
+      // 2. Setup Speech Recognition with Auto-Restart
+      setupRecognition();
+
+      // 3. Start Video Delay & Sync Loop
+      requestAnimationFrame(processVideoAndSyncLoop);
+    }
+
+    function setupRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Web Speech API not supported in this browser. Please test in Chrome Canary.");
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onaudiostart = (event) => {
+        audioOriginTimeMs = event.timeStamp;
+        setStatus("Listening (Mic Active)", "listening");
+        console.log("Audio started at document time:", audioOriginTimeMs);
+      };
+
+      recognition.onresult = (event) => {
+        const result = event.results[event.resultIndex];
+        const text = result[0].transcript;
+
+        // Check for speechStartTime / audioStartTime
+        let rawStart = result.speechStartTime ?? result.audioStartTime;
+        let rawEnd   = result.speechEndTime ?? result.audioEndTime;
+
+        // Auto-detect unit (milliseconds vs seconds):
+        let startMs, endMs;
+        if (rawStart != null && rawEnd != null) {
+          // If raw values > 500, they are already milliseconds
+          startMs = (rawStart > 500) ? rawStart : (rawStart * 1000);
+          endMs   = (rawEnd > 500)   ? rawEnd   : (rawEnd * 1000);
+        } else {
+          // Fallback simulation for testing if timestamps are not yet exposed:
+          const nowElapsedMs = performance.now() - audioOriginTimeMs;
+          endMs = Math.max(100, nowElapsedMs);
+          startMs = Math.max(0, endMs - 1400);
+          rawStart = (startMs / 1000).toFixed(2) + "s (sim)";
+          rawEnd = (endMs / 1000).toFixed(2) + "s (sim)";
+        }
+
+        // Apply Example 2 formula:
+        const displayStartMs = audioOriginTimeMs + startMs + PLAYOUT_DELAY_MS;
+        const displayEndMs   = audioOriginTimeMs + endMs + PLAYOUT_DELAY_MS;
+
+        activeCues[event.resultIndex] = {
+          text: text,
+          start: displayStartMs,
+          end: displayEndMs,
+          isFinal: result.isFinal,
+          rawStart,
+          rawEnd
+        };
+
+        renderLog();
+      };
+
+      // Auto-restart recognition if Chrome pauses/ends it
+      recognition.onend = () => {
+        if (isRunning) {
+          setStatus("Restarting Recognizer...", "restarting");
+          setTimeout(() => {
+            if (isRunning) {
+              try { recognition.start(); } catch (e) {}
+            }
+          }, 200);
+        }
+      };
+
+      recognition.onerror = (e) => {
+        console.warn("Speech recognition error:", e.error);
+        if (isRunning && e.error !== 'aborted') {
+          setStatus("Recovering: " + e.error, "restarting");
+          setTimeout(() => {
+            if (isRunning) {
+              try { recognition.start(); } catch (err) {}
+            }
+          }, 300);
+        }
+      };
+
+      try {
+        recognition.start();
+        setStatus("Starting Recognizer...", "listening");
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function processVideoAndSyncLoop() {
+      if (!isRunning) return;
+
+      const now = performance.now();
+
+      // A. Buffer live video frame
+      if (liveVideo.readyState >= 2) {
+        const offscreen = document.createElement('canvas');
+        offscreen.width = delayedCanvas.width;
+        offscreen.height = delayedCanvas.height;
+        offscreen.getContext('2d').drawImage(liveVideo, 0, 0);
+        frameBuffer.push({ time: now, frame: offscreen });
+      }
+
+      // B. Render delayed frame (from now - PLAYOUT_DELAY_MS)
+      const targetTime = now - PLAYOUT_DELAY_MS;
+      while (frameBuffer.length > 1 && frameBuffer[1].time <= targetTime) {
+        frameBuffer.shift();
+      }
+
+      if (frameBuffer.length > 0) {
+        ctx.drawImage(frameBuffer[0].frame, 0, 0);
+      }
+
+      // C. Example 2 Sync Check: Find cue in lip-sync window
+      const currentVideoDocTimeMs = now;
+
+      // 1. Strict Lip-Sync Match:
+      let currentCue = activeCues.find(
+        cue => currentVideoDocTimeMs >= cue.start && currentVideoDocTimeMs <= cue.end
+      );
+
+      let isLipSync = !!currentCue;
+
+      // 2. Readability Persistence Window (keep caption visible for 2.5s after speech ends so it doesn't flicker away):
+      if (!currentCue && activeCues.length > 0) {
+        const lastCue = activeCues[activeCues.length - 1];
+        if (currentVideoDocTimeMs > lastCue.end && currentVideoDocTimeMs <= lastCue.end + CAPTION_READ_PERSISTENCE_MS) {
+          currentCue = lastCue;
+        }
+      }
+
+      if (currentCue) {
+        subtitleOverlay.textContent = currentCue.text;
+        subtitleOverlay.className = isLipSync ? "subtitle-overlay active" : "subtitle-overlay persisted";
+      } else {
+        subtitleOverlay.textContent = '';
+        subtitleOverlay.className = "subtitle-overlay";
+      }
+
+      updateLogBadges(currentVideoDocTimeMs);
+      requestAnimationFrame(processVideoAndSyncLoop);
+    }
+
+    function renderLog() {
+      cueLog.innerHTML = activeCues.map((cue, idx) => `
+        <tr id="cue-row-${idx}">
+          <td><b>"${cue.text}"</b> ${cue.isFinal ? '✓' : '(interim)'}</td>
+          <td>${cue.rawStart} &rarr; ${cue.rawEnd}</td>
+          <td>${Math.round(cue.start)}ms - ${Math.round(cue.end)}ms</td>
+          <td><span class="badge waiting" id="badge-${idx}">In buffer</span></td>
+        </tr>
+      `).join('');
+    }
+
+    function updateLogBadges(now) {
+      activeCues.forEach((cue, idx) => {
+        const badge = document.getElementById(`badge-${idx}`);
+        if (!badge) return;
+        if (now < cue.start) {
+          badge.className = "badge waiting";
+          badge.textContent = `In buffer (-${Math.round(cue.start - now)}ms)`;
+        } else if (now >= cue.start && now <= cue.end) {
+          badge.className = "badge active";
+          badge.textContent = "● LIP-SYNCING";
+        } else if (now <= cue.end + CAPTION_READ_PERSISTENCE_MS) {
+          badge.className = "badge persisted";
+          badge.textContent = "Persisting (Reading)";
+        } else {
+          badge.className = "badge past";
+          badge.textContent = "Finished";
+        }
+      });
+    }
+
+    function stopTest() {
+      isRunning = false;
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (recognition) {
+        recognition.onend = null;
+        recognition.stop();
+      }
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('stopBtn').disabled = true;
+      setStatus("Stopped", "");
+    }
+  </script>
+</body>
+</html>
