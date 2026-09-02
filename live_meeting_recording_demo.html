@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Meeting & Recording Caption Sync Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #121212;
+      color: #e0e0e0;
+      margin: 0;
+      padding: 24px;
+    }
+    h1 { margin-top: 0; font-size: 22px; color: #fff; }
+    p.desc { color: #aaa; font-size: 14px; max-width: 800px; line-height: 1.5; margin-bottom: 20px; }
+    .controls { margin-bottom: 24px; display: flex; gap: 12px; align-items: center; }
+    button {
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      background: #1a73e8;
+      color: #fff;
+      transition: background 0.2s;
+    }
+    button:hover:not(:disabled) { background: #1557b0; }
+    button:disabled { background: #444; cursor: not-allowed; color: #888; }
+    .btn-stop { background: #ea4335; }
+    .btn-stop:hover:not(:disabled) { background: #d93025; }
+
+    .stage-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      max-width: 1100px;
+    }
+    .card {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 18px;
+      border: 1px solid #333;
+    }
+    .card h3 {
+      margin-top: 0;
+      font-size: 16px;
+      color: #8ab4f8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status-badge {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-weight: bold;
+      background: #333;
+      color: #888;
+    }
+    .status-badge.live { background: #ea4335; color: #fff; }
+    .status-badge.ready { background: #34a853; color: #fff; }
+
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      height: 300px;
+      background: #000;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .live-caption-overlay {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 16px;
+      text-align: center;
+      min-height: 24px;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .live-caption-overlay.interim { color: #aaa; font-style: italic; }
+
+    .transcript-box {
+      margin-top: 24px;
+      max-width: 1100px;
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 18px;
+      border: 1px solid #333;
+    }
+    .transcript-box h3 { margin-top: 0; font-size: 16px; color: #8ab4f8; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #333; }
+    th { color: #aaa; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <h1>Web Speech API: Live Meeting & Recording Sync Demo</h1>
+  <p class="desc">
+    Demonstrates <b>Example 2</b>: During a live call, captions appear immediately on screen. 
+    Simultaneously, <code>speechStartTime</code> and <code>speechEndTime</code> are recorded so that the exported meeting recording 
+    features <b>frame-accurate synchronized WebVTT captions</b> upon playback.
+  </p>
+
+  <div class="controls">
+    <button id="startMeetingBtn" onclick="startMeeting()">1. Start Meeting & Recording</button>
+    <button id="endMeetingBtn" class="btn-stop" onclick="endMeeting()" disabled>2. End Meeting & Generate Playback</button>
+  </div>
+
+  <div class="stage-container">
+    <!-- Panel 1: Live Call (Zero-Delay Display) -->
+    <div class="card">
+      <h3>
+        Live Meeting (Real-Time)
+        <span id="liveBadge" class="status-badge">Standby</span>
+      </h3>
+      <div class="video-wrapper">
+        <video id="liveVideo" autoplay playsinline muted></video>
+        <div id="liveCaptions" class="live-caption-overlay" style="display: none;"></div>
+      </div>
+      <p style="font-size: 12px; color: #888; margin-top: 10px;">
+        Live captions display immediately upon arrival (with a 3-second readability persistence window).
+      </p>
+    </div>
+
+    <!-- Panel 2: Recording Playback with WebVTT Cues -->
+    <div class="card">
+      <h3>
+        Recorded Meeting Playback
+        <span id="recordingBadge" class="status-badge">Not Recorded</span>
+      </h3>
+      <div class="video-wrapper">
+        <video id="recordedVideo" controls></video>
+      </div>
+      <p style="font-size: 12px; color: #888; margin-top: 10px;">
+        Play the recording to see native WebVTT captions synchronized to exact acoustic speech boundaries.
+      </p>
+    </div>
+  </div>
+
+  <!-- Recorded Transcript Table -->
+  <div class="transcript-box">
+    <h3>Recorded Meeting Transcript</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Speaker</th>
+          <th>Transcript Text</th>
+          <th>speechStartTime</th>
+          <th>speechEndTime</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody id="transcriptBody">
+        <tr><td colspan="5" style="color: #666;">Transcript will populate as you speak...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    let mediaStream = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let recognition = null;
+    let recordingStartTimeMs = 0;
+    const meetingTranscript = [];
+    let liveCaptionTimeout = null;
+
+    const liveVideo = document.getElementById('liveVideo');
+    const recordedVideo = document.getElementById('recordedVideo');
+    const liveCaptions = document.getElementById('liveCaptions');
+    const liveBadge = document.getElementById('liveBadge');
+    const recordingBadge = document.getElementById('recordingBadge');
+    const transcriptBody = document.getElementById('transcriptBody');
+
+    async function startMeeting() {
+      document.getElementById('startMeetingBtn').disabled = true;
+      document.getElementById('endMeetingBtn').disabled = false;
+      recordedChunks = [];
+      meetingTranscript.length = 0;
+      transcriptBody.innerHTML = '';
+
+      // 1. Capture Camera & Mic
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        liveVideo.srcObject = mediaStream;
+        await liveVideo.play();
+      } catch (err) {
+        alert("Camera/Mic access denied: " + err.message);
+        resetUI();
+        return;
+      }
+
+      // 2. Start MediaRecorder for Meeting Recording
+      mediaRecorder = new MediaRecorder(mediaStream);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = finalizeRecordingPlayback;
+      mediaRecorder.start();
+      recordingStartTimeMs = performance.now();
+
+      liveBadge.className = 'status-badge live';
+      liveBadge.textContent = '● LIVE REC';
+      liveCaptions.style.display = 'block';
+      liveCaptions.textContent = 'Listening...';
+
+      // 3. Start Speech Recognition
+      setupSpeechRecognition();
+    }
+
+    function setupSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Web Speech API not supported in this browser. Please test in Chrome Canary.");
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onresult = (event) => {
+        const result = event.results[event.resultIndex];
+        const text = result[0].transcript;
+
+        // 1. Live Call: Display immediately
+        liveCaptions.textContent = text;
+        liveCaptions.className = 'live-caption-overlay' + (result.isFinal ? '' : ' interim');
+
+        clearTimeout(liveCaptionTimeout);
+        if (result.isFinal) {
+          liveCaptionTimeout = setTimeout(() => {
+            liveCaptions.textContent = '';
+          }, 3000);
+
+          // Extract timestamps (or calculate relative to recording start)
+          let rawStart = result.speechStartTime ?? result.audioStartTime;
+          let rawEnd   = result.speechEndTime ?? result.audioEndTime;
+
+          let startSec, endSec;
+          if (rawStart != null && rawEnd != null) {
+            // Auto-detect seconds vs milliseconds:
+            startSec = (rawStart > 500) ? (rawStart / 1000) : rawStart;
+            endSec   = (rawEnd > 500)   ? (rawEnd / 1000)   : rawEnd;
+          } else {
+            // Fallback for browsers without experimental timestamp flag enabled:
+            const elapsed = (performance.now() - recordingStartTimeMs) / 1000;
+            endSec = elapsed;
+            startSec = Math.max(0, elapsed - 2.0);
+          }
+
+          // Save to meeting transcript
+          const entry = {
+            speaker: 'Speaker 1',
+            text: text,
+            startTime: startSec,
+            endTime: endSec
+          };
+          meetingTranscript.push(entry);
+          renderTranscriptRow(entry);
+        }
+      };
+
+      recognition.onend = () => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          try { recognition.start(); } catch (e) {}
+        }
+      };
+
+      recognition.start();
+    }
+
+    function endMeeting() {
+      document.getElementById('endMeetingBtn').disabled = true;
+      liveBadge.className = 'status-badge';
+      liveBadge.textContent = 'Ended';
+      liveCaptions.style.display = 'none';
+
+      if (recognition) {
+        recognition.onend = null;
+        recognition.stop();
+      }
+
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        liveVideo.srcObject = null;
+      }
+    }
+
+    function finalizeRecordingPlayback() {
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const videoUrl = URL.createObjectURL(blob);
+      recordedVideo.src = videoUrl;
+
+      recordingBadge.className = 'status-badge ready';
+      recordingBadge.textContent = 'Ready to Play';
+
+      const captionTrack = recordedVideo.addTextTrack('captions', 'Meeting Captions', 'en');
+      captionTrack.mode = 'showing';
+
+      for (const entry of meetingTranscript) {
+        captionTrack.addCue(new VTTCue(entry.startTime, entry.endTime, entry.text));
+      }
+
+      document.getElementById('startMeetingBtn').disabled = false;
+    }
+
+    function renderTranscriptRow(entry) {
+      const duration = (entry.endTime - entry.startTime).toFixed(2);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><b>${entry.speaker}</b></td>
+        <td>"${entry.text}"</td>
+        <td>${entry.startTime.toFixed(2)}s</td>
+        <td>${entry.endTime.toFixed(2)}s</td>
+        <td>${duration}s</td>
+      `;
+      transcriptBody.appendChild(tr);
+    }
+
+    function resetUI() {
+      document.getElementById('startMeetingBtn').disabled = false;
+      document.getElementById('endMeetingBtn').disabled = true;
+      liveBadge.textContent = 'Standby';
+    }
+  </script>
+</body>
+</html>
