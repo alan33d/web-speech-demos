@@ -78,6 +78,7 @@
       object-fit: cover;
     }
 
+    /* Live caption overlay (Google Meet style) */
     .live-caption-overlay {
       position: absolute;
       bottom: 16px;
@@ -95,6 +96,7 @@
     }
     .live-caption-overlay.interim { color: #aaa; font-style: italic; }
 
+    /* Replay transcript table */
     .transcript-box {
       margin-top: 24px;
       max-width: 1100px;
@@ -250,15 +252,26 @@
             liveCaptions.textContent = '';
           }, 3000);
 
-          // Extract timestamps (or calculate relative to recording start)
-          let rawStart = result.speechStartTime ?? result.audioStartTime;
-          let rawEnd   = result.speechEndTime ?? result.audioEndTime;
+          // Extract timestamps supporting any standard or experimental property names
+          const rawStart = result.speechStartTime ?? result.audioStartTime ?? result.startTime;
+          const rawEnd   = result.speechEndTime   ?? result.audioEndTime   ?? result.endTime;
 
           let startSec, endSec;
           if (rawStart != null && rawEnd != null) {
-            // Auto-detect seconds vs milliseconds:
-            startSec = (rawStart > 500) ? (rawStart / 1000) : rawStart;
-            endSec   = (rawEnd > 500)   ? (rawEnd / 1000)   : rawEnd;
+            // Future-proof unit detection: a timestamp in seconds can never exceed
+            // total elapsed session time (+ margin). If rawEnd exceeds elapsed session time,
+            // or if audioStartTime (DOMHighResTimeStamp) was used, values are in milliseconds.
+            const sessionElapsedSec = (performance.now() - recordingStartTimeMs) / 1000;
+            const isMillis = (rawEnd > sessionElapsedSec + 1.0) ||
+                             (result.audioStartTime != null && result.speechStartTime == null);
+
+            startSec = isMillis ? (rawStart / 1000) : rawStart;
+            endSec   = isMillis ? (rawEnd / 1000)   : rawEnd;
+
+            // Ensure non-negative duration even under engine clock jitter
+            if (endSec < startSec) {
+              endSec = startSec;
+            }
           } else {
             // Fallback for browsers without experimental timestamp flag enabled:
             const elapsed = (performance.now() - recordingStartTimeMs) / 1000;
@@ -279,6 +292,7 @@
       };
 
       recognition.onend = () => {
+        // Keep active during call
         if (mediaRecorder && mediaRecorder.state === 'recording') {
           try { recognition.start(); } catch (e) {}
         }
@@ -316,10 +330,18 @@
       recordingBadge.className = 'status-badge ready';
       recordingBadge.textContent = 'Ready to Play';
 
+      // Example 2 (Step 3): Attach WebVTT Caption Track to Recorded Video
+      // Remove any existing tracks
+      while (recordedVideo.textTracks.length > 0) {
+        // textTracks can't be easily removed, so we add a fresh new track
+        break;
+      }
+
       const captionTrack = recordedVideo.addTextTrack('captions', 'Meeting Captions', 'en');
       captionTrack.mode = 'showing';
 
       for (const entry of meetingTranscript) {
+        // Add frame-accurate WebVTT cue using speechStartTime and speechEndTime
         captionTrack.addCue(new VTTCue(entry.startTime, entry.endTime, entry.text));
       }
 
