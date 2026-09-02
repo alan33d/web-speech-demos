@@ -242,23 +242,36 @@
         const result = event.results[event.resultIndex];
         const text = result[0].transcript;
 
-        // Check for speechStartTime / audioStartTime
-        let rawStart = result.speechStartTime ?? result.audioStartTime;
-        let rawEnd   = result.speechEndTime ?? result.audioEndTime;
+        // Extract timestamps supporting any standard or experimental property names
+        const rawStart = result.speechStartTime ?? result.audioStartTime ?? result.startTime;
+        const rawEnd   = result.speechEndTime   ?? result.audioEndTime   ?? result.endTime;
 
-        // Auto-detect unit (milliseconds vs seconds):
         let startMs, endMs;
+        let rawStartStr, rawEndStr;
         if (rawStart != null && rawEnd != null) {
-          // If raw values > 500, they are already milliseconds
-          startMs = (rawStart > 500) ? rawStart : (rawStart * 1000);
-          endMs   = (rawEnd > 500)   ? rawEnd   : (rawEnd * 1000);
+          // Future-proof unit detection: a timestamp in seconds can never exceed
+          // total elapsed session time (+ margin). If rawEnd exceeds elapsed session time,
+          // or if audioStartTime (DOMHighResTimeStamp) was used, values are in milliseconds.
+          const sessionElapsedSec = (performance.now() - audioOriginTimeMs) / 1000;
+          const isMillis = (rawEnd > sessionElapsedSec + 1.0) ||
+                           (result.audioStartTime != null && result.speechStartTime == null);
+
+          startMs = isMillis ? rawStart : (rawStart * 1000);
+          endMs   = isMillis ? rawEnd   : (rawEnd * 1000);
+
+          if (endMs < startMs) {
+            endMs = startMs;
+          }
+
+          rawStartStr = (startMs / 1000).toFixed(2) + "s";
+          rawEndStr   = (endMs / 1000).toFixed(2) + "s";
         } else {
           // Fallback simulation for testing if timestamps are not yet exposed:
           const nowElapsedMs = performance.now() - audioOriginTimeMs;
           endMs = Math.max(100, nowElapsedMs);
           startMs = Math.max(0, endMs - 1400);
-          rawStart = (startMs / 1000).toFixed(2) + "s (sim)";
-          rawEnd = (endMs / 1000).toFixed(2) + "s (sim)";
+          rawStartStr = (startMs / 1000).toFixed(2) + "s (sim)";
+          rawEndStr = (endMs / 1000).toFixed(2) + "s (sim)";
         }
 
         // Apply Example 2 formula:
@@ -270,8 +283,8 @@
           start: displayStartMs,
           end: displayEndMs,
           isFinal: result.isFinal,
-          rawStart,
-          rawEnd
+          rawStart: rawStartStr,
+          rawEnd: rawEndStr
         };
 
         renderLog();
