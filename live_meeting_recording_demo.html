@@ -105,10 +105,47 @@
       padding: 18px;
       border: 1px solid #333;
     }
-    .transcript-box h3 { margin-top: 0; font-size: 16px; color: #8ab4f8; }
+    .transcript-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .transcript-box h3 { margin: 0; font-size: 16px; color: #8ab4f8; }
+    .seek-hint { font-size: 12px; color: #888; transition: color 0.2s; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #333; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #333; }
     th { color: #aaa; font-weight: 600; }
+    
+    /* Click-to-seek interactive row styling */
+    .transcript-row {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .transcript-row:hover {
+      background: #282828;
+    }
+    .transcript-row.active-row {
+      background: #1a3a5a !important;
+      outline: 1px solid #8ab4f8;
+    }
+    .seek-link {
+      color: #8ab4f8;
+      text-decoration: none;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(138, 180, 248, 0.12);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .seek-link:hover {
+      background: rgba(138, 180, 248, 0.28);
+      color: #d2e3fc;
+      text-decoration: none;
+    }
   </style>
 </head>
 <body>
@@ -117,7 +154,7 @@
   <p class="desc">
     Demonstrates <b>Example 2</b>: During a live call, captions appear immediately on screen. 
     Simultaneously, <code>speechStartTime</code> and <code>speechEndTime</code> are recorded so that the exported meeting recording 
-    features <b>frame-accurate synchronized WebVTT captions</b> upon playback.
+    features <b>frame-accurate synchronized WebVTT captions</b> and interactive <b>click-to-seek transcript navigation</b>.
   </p>
 
   <div class="controls">
@@ -158,13 +195,16 @@
 
   <!-- Recorded Transcript Table -->
   <div class="transcript-box">
-    <h3>Recorded Meeting Transcript</h3>
+    <div class="transcript-header">
+      <h3>Recorded Meeting Transcript</h3>
+      <span id="seekHint" class="seek-hint">💡 Click any transcript row or timestamp to seek video</span>
+    </div>
     <table>
       <thead>
         <tr>
           <th>Speaker</th>
           <th>Transcript Text</th>
-          <th>speechStartTime</th>
+          <th>speechStartTime (Seek)</th>
           <th>speechEndTime</th>
           <th>Duration</th>
         </tr>
@@ -196,7 +236,12 @@
       document.getElementById('endMeetingBtn').disabled = false;
       recordedChunks = [];
       meetingTranscript.length = 0;
-      transcriptBody.innerHTML = '';
+      transcriptBody.innerHTML = '<tr><td colspan="5" style="color: #666;">Transcript will populate as you speak...</td></tr>';
+      const seekHint = document.getElementById('seekHint');
+      if (seekHint) {
+        seekHint.textContent = '💡 Click any transcript row or timestamp to seek video';
+        seekHint.style.color = '#888';
+      }
 
       // 1. Capture Camera & Mic
       try {
@@ -287,7 +332,7 @@
             endTime: endSec
           };
           meetingTranscript.push(entry);
-          renderTranscriptRow(entry);
+          renderTranscriptRow(entry, meetingTranscript.length - 1);
         }
       };
 
@@ -330,6 +375,12 @@
       recordingBadge.className = 'status-badge ready';
       recordingBadge.textContent = 'Ready to Play';
 
+      const seekHint = document.getElementById('seekHint');
+      if (seekHint) {
+        seekHint.textContent = '✅ Recording ready: click any row or timestamp link to seek video';
+        seekHint.style.color = '#8ab4f8';
+      }
+
       // Example 2 (Step 3): Attach WebVTT Caption Track to Recorded Video
       // Remove any existing tracks
       while (recordedVideo.textTracks.length > 0) {
@@ -348,23 +399,65 @@
       document.getElementById('startMeetingBtn').disabled = false;
     }
 
-    function renderTranscriptRow(entry) {
+    function seekToVideo(timeSec) {
+      if (!recordedVideo.src || recordedVideo.src === '') {
+        alert("Recording is still in progress. Please click '2. End Meeting & Generate Playback' first to seek.");
+        return;
+      }
+      recordedVideo.currentTime = Math.max(0, timeSec);
+      recordedVideo.play();
+      recordedVideo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function renderTranscriptRow(entry, index) {
+      if (index === 0) {
+        transcriptBody.innerHTML = '';
+      }
       const duration = (entry.endTime - entry.startTime).toFixed(2);
       const tr = document.createElement('tr');
+      tr.id = `transcript-row-${index}`;
+      tr.className = 'transcript-row';
+      tr.title = `Click to seek recorded video to ${entry.startTime.toFixed(2)}s`;
+      tr.onclick = () => seekToVideo(entry.startTime);
+
       tr.innerHTML = `
         <td><b>${entry.speaker}</b></td>
         <td>"${entry.text}"</td>
-        <td>${entry.startTime.toFixed(2)}s</td>
+        <td>
+          <a href="javascript:void(0)" class="seek-link" onclick="event.stopPropagation(); seekToVideo(${entry.startTime});" title="Seek recorded video to ${entry.startTime.toFixed(2)}s">
+            ▶ ${entry.startTime.toFixed(2)}s
+          </a>
+        </td>
         <td>${entry.endTime.toFixed(2)}s</td>
         <td>${duration}s</td>
       `;
       transcriptBody.appendChild(tr);
     }
 
+    // Highlight active transcript row synchronized with video playback
+    recordedVideo.addEventListener('timeupdate', () => {
+      const currentTime = recordedVideo.currentTime;
+      for (let i = 0; i < meetingTranscript.length; i++) {
+        const entry = meetingTranscript[i];
+        const row = document.getElementById(`transcript-row-${i}`);
+        if (!row) continue;
+        if (currentTime >= entry.startTime && currentTime <= entry.endTime) {
+          row.classList.add('active-row');
+        } else {
+          row.classList.remove('active-row');
+        }
+      }
+    });
+
     function resetUI() {
       document.getElementById('startMeetingBtn').disabled = false;
       document.getElementById('endMeetingBtn').disabled = true;
       liveBadge.textContent = 'Standby';
+      const seekHint = document.getElementById('seekHint');
+      if (seekHint) {
+        seekHint.textContent = '💡 Click any transcript row or timestamp to seek video';
+        seekHint.style.color = '#888';
+      }
     }
   </script>
 </body>
