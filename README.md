@@ -6,6 +6,7 @@ A collection of interactive demonstrations and prototype implementations for pro
 
 * **[Live Meeting & Recording Caption Sync Demo](https://alan33d.github.io/web-speech-demos/live_meeting_recording_demo.html)**: Demonstrates zero-delay live in-call captions paired with synchronized WebVTT caption tracks and interactive "click-to-seek" transcript navigation for post-meeting recording playback using `speechStartTime` and `speechEndTime`.
 * **[WebRTC Caption Playout Delay Sync Demo](https://alan33d.github.io/web-speech-demos/webrtc_caption_sync_test.html)**: Demonstrates frame-accurate lip-sync between live camera feeds and speech recognition captions using acoustic timestamps and a playout delay buffer.
+* **[Speech Timeline & Latency Demo](https://alan33d.github.io/web-speech-demos/speech_latency.html)**: Interactive waveform timeline visualizing `speechStartTime`, `speechEndTime`, endpointer events, and real-time ASR processing latency (updated from `@msw`'s latency demo for `speechStartTime`/`speechEndTime` in seconds and updated `SpeechRecognitionEvent.timeStamp`).
 
 ---
 

@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>Speech Timeline & Toggling</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #eee;
+    }
+
+    button {
+      padding: 10px 15px;
+      margin-bottom: 10px;
+      margin-right: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 4px;
+      transition: background 0.2s;
+      vertical-align: middle;
+    }
+
+    button:hover {
+      background: #555;
+    }
+
+    .options-container {
+      display: inline-block;
+      position: relative;
+      vertical-align: middle;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+
+    .options-container button {
+      margin-right: 0;
+      margin-bottom: 0;
+    }
+
+    .options-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 0;
+      z-index: 100;
+      background: #252525;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 12px 14px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+      min-width: 280px;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .options-menu.open {
+      display: flex;
+    }
+
+    .options-menu .option-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .options-menu .option-row label {
+      font-weight: bold;
+      color: #ddd;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .options-menu select,
+    .options-menu input[type="text"] {
+      padding: 6px 10px;
+      margin: 0;
+      background: #333;
+      color: #fff;
+      border: 1px solid #555;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+
+    .options-menu select {
+      cursor: pointer;
+    }
+
+    .options-menu select option {
+      background: #333;
+      color: #fff;
+    }
+
+    .options-menu input[type="text"] {
+      width: 140px;
+    }
+
+    .options-menu input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: #00e5ff;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }
+
+    canvas {
+      background: #2a2a2a;
+      display: block;
+      margin-bottom: 8px;
+      width: 100%;
+      max-width: 1000px;
+      height: 350px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+      cursor: grab;
+    }
+
+    canvas:active {
+      cursor: grabbing;
+    }
+
+    .timeline-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #222;
+      padding: 8px 12px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      max-width: 980px;
+      margin-bottom: 15px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+
+    .timeline-controls input[type="range"] {
+      flex: 1;
+      cursor: pointer;
+      accent-color: #00e5ff;
+    }
+
+    .timeline-controls span {
+      white-space: nowrap;
+      color: #aaa;
+    }
+
+    .timeline-controls button {
+      padding: 6px 12px;
+      margin: 0;
+      font-size: 12px;
+    }
+
+    .legend {
+      font-family: monospace;
+      font-size: 13px;
+      background: #222;
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      max-width: 980px;
+      margin-bottom: 15px;
+    }
+
+    .legend span {
+      margin-right: 15px;
+      display: inline-block;
+    }
+
+    .legend a {
+      color: inherit;
+      text-decoration: underline;
+    }
+
+    pre {
+      background: #222;
+      padding: 10px;
+      white-space: pre-wrap;
+      border: 1px solid #444;
+      max-height: 300px;
+      overflow-y: auto;
+      max-width: 980px;
+    }
+
+    .description {
+      font-family: monospace;
+      color: #aaa;
+      max-width: 1000px;
+      line-height: 1.5;
+      margin-bottom: 15px;
+    }
+
+    a {
+      /* float: right;
+      vertical-align: middle; */
+      color: hsl(200, 100%, 40%);
+    }
+  </style>
+</head>
+
+<body>
+  <button id="btnMic">Start Mic Transcription & Timeline</button>
+  <button id="btnFile">Play & Transcribe Audio File</button>
+  <div class="options-container">
+    <button id="btnOptions" type="button">Options ▾</button>
+    <div id="optionsMenu" class="options-menu">
+      <div class="option-row">
+        <label for="qualitySelect">quality:</label>
+        <select id="qualitySelect">
+          <option value="">&lt;none&gt; (undefined)</option>
+          <option value="command" selected="true">command (SODA)</option>
+          <option value="dictation">dictation (Small Expert)</option>
+        </select>
+      </div>
+      <div class="option-row">
+        <label for="txtLang">language:</label>
+        <input type="text" id="txtLang">
+      </div>
+    </div>
+  </div>
+  <a href="https://github.com/michaelwasserman/web-speech-demos" target="_blank">🔗&nbsp;Source</a>
+
+  <audio id="audioPlayer" src="https://raw.githubusercontent.com/web-platform-tests/wpt/master/media/speech.wav"
+    crossorigin="anonymous"></audio>
+
+  <div class="description">
+    <p>Demo exploring <a href="https://webaudio.github.io/web-speech-api" target="_blank">Web Speech API</a> timestamps
+      and
+      latency; with support for <a
+        href="https://github.com/WebAudio/web-speech-api/blob/main/explainers/speech-recognition-result-timestamps.md"
+        target="_blank">proposed</a> SpeechRecognitionResult attributes.
+      <br>
+      See <a href="https://github.com/WebAudio/web-speech-api/issues/191" target="_blank">Issue #191</a>,
+      and test <a href="https://chromestatus.com/feature/5811907077472256" target="_blank">Chrome's implementation</a>
+      with
+      `--enable-blink-features=WebSpeechTimestamps`.
+    </p>
+  </div>
+
+  <canvas id="timeline" width="1000" height="350"></canvas>
+
+  <div class="timeline-controls">
+    <label for="timelineScroll">Timeline Scroll:</label>
+    <input type="range" id="timelineScroll" min="0" max="1000" value="1000" step="1">
+    <span id="timelineTimeInfo">10.0s window</span>
+    <button id="btnLive">Follow Live / End</button>
+  </div>
+
+  <div class="legend">
+    <span style="color: #ff9800;">■ Endpointer Events</span>
+    <span style="color: #aaaaaa;">■ Interim Results</span>
+    <span style="color: #6666ff;">■ Final Results</span>
+    <span style="color: #ffffff;">■ Transcribed Text</span>
+    <span style="color: #00ccff;">■ <a
+        href="https://github.com/WebAudio/web-speech-api/blob/main/explainers/speech-recognition-result-timestamps.md#web-idl-definition"
+        target="_blank">speechStartTime</a></span>
+    <span style="color: #ff00ff;">■ <a
+        href="https://github.com/WebAudio/web-speech-api/blob/main/explainers/speech-recognition-result-timestamps.md#web-idl-definition"
+        target="_blank">speechEndTime</a></span><br>
+    <span style="color: #888; margin-left: 8px;">Latency:</span>
+    <span style="color: #00ff00;">■ ≤350ms</span>
+    <span style="color: #ffff00;">■ ≤700ms</span>
+    <span style="color: #ff9800;">■ ≤1000ms</span>
+    <span style="color: #ff4444;">■ >1000ms</span>
+  </div>
+
+  <pre id="log"></pre>
+
+  <script>
+    const canvas = document.getElementById('timeline');
+    const ctx = canvas.getContext('2d');
+    const logEl = document.getElementById('log');
+    const btnMic = document.getElementById('btnMic');
+    const btnFile = document.getElementById('btnFile');
+    const btnOptions = document.getElementById('btnOptions');
+    const optionsMenu = document.getElementById('optionsMenu');
+    const qualitySelect = document.getElementById('qualitySelect');
+    const txtLang = document.getElementById('txtLang');
+    const audioPlayer = document.getElementById('audioPlayer');
+    const timelineScroll = document.getElementById('timelineScroll');
+    const timelineTimeInfo = document.getElementById('timelineTimeInfo');
+    const btnLive = document.getElementById('btnLive');
+
+    btnOptions.addEventListener('click', (e) => {
+      e.stopPropagation();
+      optionsMenu.classList.toggle('open');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!optionsMenu.contains(e.target) && e.target !== btnOptions) {
+        optionsMenu.classList.remove('open');
+      }
+    });
+
+    optionsMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    const getLatencyColor = (ms) => {
+      if (typeof ms !== 'number' || isNaN(ms)) return '#aaa';
+      if (ms <= 350) return '#00ff00';
+      if (ms <= 700) return '#ffff00';
+      if (ms <= 1000) return '#ff9800';
+      return '#ff4444';
+    };
+
+    const alignWords = (prevWords, newText, currentLatency) => {
+      const newTokens = newText ? newText.split(/\s+/).filter(Boolean) : [];
+      if (!prevWords || prevWords.length === 0) {
+        return newTokens.map(w => ({ text: w, latency: currentLatency }));
+      }
+
+      // Match common prefix
+      let prefixLen = 0;
+      while (
+        prefixLen < prevWords.length &&
+        prefixLen < newTokens.length &&
+        prevWords[prefixLen].text === newTokens[prefixLen]
+      ) {
+        prefixLen++;
+      }
+
+      // Match common suffix
+      let suffixLen = 0;
+      while (
+        suffixLen < (prevWords.length - prefixLen) &&
+        suffixLen < (newTokens.length - prefixLen) &&
+        prevWords[prevWords.length - 1 - suffixLen].text === newTokens[newTokens.length - 1 - suffixLen]
+      ) {
+        suffixLen++;
+      }
+
+      const result = [];
+      for (let i = 0; i < prefixLen; i++) {
+        result.push(prevWords[i]);
+      }
+      const middleEnd = newTokens.length - suffixLen;
+      for (let i = prefixLen; i < middleEnd; i++) {
+        result.push({ text: newTokens[i], latency: currentLatency });
+      }
+      for (let i = prevWords.length - suffixLen; i < prevWords.length; i++) {
+        result.push(prevWords[i]);
+      }
+      return result;
+    };
+
+    const log = (msg, color = '#eee') => {
+      const span = document.createElement('span');
+      span.style.color = color;
+      span.textContent = msg + '\n';
+      logEl.appendChild(span);
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    const logResult = (result, id, words) => {
+      const isFinal = result.isFinal;
+      const timeReceived = result.timeReceived;
+      const container = document.createElement('div');
+      container.style.color = isFinal ? '#6666ff' : '#aaaaaa';
+      container.style.whiteSpace = 'pre-wrap';
+      container.style.marginBottom = '6px';
+
+      const headerSpan = document.createElement('span');
+      headerSpan.textContent = `[RESULT #${id}] ${isFinal ? '(FINAL)' : '(INTERIM)'} "`;
+      container.appendChild(headerSpan);
+
+      if (words && words.length > 0) {
+        words.forEach((w, idx) => {
+          const wordSpan = document.createElement('span');
+          wordSpan.style.color = getLatencyColor(w.latency);
+          wordSpan.style.fontWeight = 'bold';
+          wordSpan.textContent = w.text;
+          container.appendChild(wordSpan);
+          if (idx < words.length - 1) {
+            container.appendChild(document.createTextNode(' '));
+          }
+        });
+      } else {
+        const textSpan = document.createElement('span');
+        textSpan.textContent = result[0]?.transcript?.trim() || '';
+        container.appendChild(textSpan);
+      }
+
+      const quoteCloseSpan = document.createElement('span');
+      quoteCloseSpan.textContent = '"';
+      container.appendChild(quoteCloseSpan);
+
+      let textContent = `\n ↳ received (now)  : ${timeReceived.toFixed(1)}ms`;
+      if (typeof result.eventTimeStamp === 'number') {
+        textContent += `\n ↳ ev.timeStamp    : ${result.eventTimeStamp.toFixed(1)}ms`;
+      }
+
+      if (typeof result.absoluteSpeechStart === 'number') {
+        const rawStart = (typeof result.speechStartTime === 'number') ? `${result.speechStartTime.toFixed(3)}s, ` : '';
+        textContent += `\n ↳ speechStartTime : ${rawStart}abs ${result.absoluteSpeechStart.toFixed(1)}ms`;
+      }
+      if (typeof result.absoluteSpeechEnd === 'number') {
+        const rawEnd = (typeof result.speechEndTime === 'number') ? `${result.speechEndTime.toFixed(3)}s, ` : '';
+        textContent += `\n ↳ speechEndTime   : ${rawEnd}abs ${result.absoluteSpeechEnd.toFixed(1)}ms\n ↳ Latency (Received - SpeechEnd): `;
+      }
+
+      const detailsSpan = document.createElement('span');
+      detailsSpan.textContent = textContent;
+      container.appendChild(detailsSpan);
+
+      if (typeof result.absoluteSpeechEnd === 'number') {
+        const latency = timeReceived - result.absoluteSpeechEnd;
+        const badge = document.createElement('span');
+        badge.style.background = getLatencyColor(latency);
+        badge.style.color = '#111';
+        badge.style.fontWeight = 'bold';
+        badge.style.padding = '1px 6px';
+        badge.style.borderRadius = '3px';
+        badge.textContent = `${latency.toFixed(1)}ms`;
+        container.appendChild(badge);
+      }
+
+      logEl.appendChild(container);
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    const DURATION_MS = 10000;
+
+    let audioCtx, analyser, dataArray;
+    let audioHistory = [];
+    let transcripts = [];
+    let endpointerMarkers = [];
+    let timelineStartTime = null;
+    let audioOriginTime = 0;
+    let stoppedViewEndTime = 0;
+    let viewEndTime = 0;
+    let autoScroll = true;
+    let sessionResultOffset = 0;
+    let isRecognizing = false;
+
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    window.currentRecognition = null;
+    txtLang.value = navigator.language || 'en-US';
+
+    const endpointerEvents = ['audiostart', 'soundstart', 'speechstart', 'speechend', 'soundend', 'audioend'];
+
+    function resetRecognitionSession() {
+      if (isRecognizing && window.currentRecognition) {
+        try {
+          window.currentRecognition.abort();
+        } catch (e) {}
+      }
+
+      if (!SpeechRec) return null;
+
+      const recognition = new SpeechRec();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.lang = txtLang.value.trim() || navigator.language || 'en-US';
+      recognition.quality = qualitySelect.value || undefined;
+
+      // Log & Store Endpointer Events
+      endpointerEvents.forEach(eventName => {
+        recognition.addEventListener(eventName, (e) => {
+          if (eventName === 'audiostart') {
+            audioOriginTime = e.timeStamp;
+          }
+          log(`[EVENT: ${eventName}] timeStamp: ${e.timeStamp.toFixed(1)}ms`, '#ff9800');
+          endpointerMarkers.push({ name: eventName, time: e.timeStamp });
+        });
+      });
+
+      // Session Start
+      recognition.onstart = (e) => {
+        isRecognizing = true;
+        autoScroll = true;
+        btnMic.innerText = "Stop Mic Transcription";
+        btnMic.style.background = "#aa0000"; // Red for active
+
+        audioOriginTime = (e && typeof e.timeStamp === 'number') ? e.timeStamp : performance.now();
+        timelineStartTime ??= audioOriginTime;
+        sessionResultOffset = transcripts.length;
+        log(`[STARTED] Stream Start TimeStamp: ${audioOriginTime.toFixed(1)}ms\n`, '#ffffff');
+      };
+
+      // Session End (Manual or Automatic timeout)
+      recognition.onend = () => {
+        isRecognizing = false;
+        autoScroll = false;
+        stoppedViewEndTime = performance.now();
+        viewEndTime = stoppedViewEndTime;
+        btnMic.innerText = "Start Mic Transcription & Timeline";
+        btnMic.style.background = "#333";
+        log(`[ENDED] Recognition stopped.\n`, '#ffffff');
+      };
+
+      // Recognition Results Handler
+      recognition.onresult = (e) => {
+        // Use performance.now() for actual JS delivery time; after crrev.com/c/8409366,
+        // e.timeStamp reflects the recognized speech end time rather than dispatch time.
+        const receivedNow = performance.now();
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          const result = e.results[i];
+          if (!result || !result[0]) continue;
+
+          const globalId = sessionResultOffset + i;
+          let existing = transcripts.find(t => t.id === globalId);
+
+          // Do not update or accumulate timestamps on results that have already been finalized
+          if (existing && existing.results[existing.results.length - 1].isFinal) {
+            continue;
+          }
+
+          result.timeReceived = receivedNow;
+          result.eventTimeStamp = e.timeStamp;
+
+          // speechStartTime/speechEndTime are non-nullable doubles in seconds (0.0 sentinel when
+          // unpopulated, per crrev.com/c/8408547). Fall back to legacy audioStartTime/audioEndTime (ms).
+          let startOffsetMs;
+          let endOffsetMs;
+          if (typeof result.speechStartTime === 'number' && typeof result.speechEndTime === 'number') {
+            if (result.speechStartTime > 0 || result.speechEndTime > 0) {
+              startOffsetMs = result.speechStartTime * 1000;
+              endOffsetMs = result.speechEndTime * 1000;
+            }
+          } else if (typeof result.audioStartTime === 'number' || typeof result.audioEndTime === 'number') {
+            startOffsetMs = result.audioStartTime ?? undefined;
+            endOffsetMs = result.audioEndTime ?? undefined;
+          }
+
+          // Convert stream offsets to document time origin coordinates per explainer
+          Object.defineProperty(result, 'absoluteSpeechStart', {
+            value: (typeof startOffsetMs === 'number') ? audioOriginTime + startOffsetMs : undefined,
+            writable: true,
+            configurable: true
+          });
+          Object.defineProperty(result, 'absoluteSpeechEnd', {
+            value: (typeof endOffsetMs === 'number') ? audioOriginTime + endOffsetMs : undefined,
+            writable: true,
+            configurable: true
+          });
+
+          const asrLatencyMs = (typeof result.absoluteSpeechEnd === 'number')
+            ? (result.timeReceived - result.absoluteSpeechEnd)
+            : null;
+
+          const newText = result[0].transcript.trim();
+          const prevWords = existing ? existing.words : [];
+          const updatedWords = alignWords(prevWords, newText, asrLatencyMs);
+
+          if (existing) {
+            existing.words = updatedWords;
+            existing.results.push(result);
+          } else {
+            transcripts.push({ id: globalId, words: updatedWords, results: [result] });
+          }
+
+          logResult(result, globalId, updatedWords);
+        }
+      };
+
+      recognition.onerror = (e) => {
+        log(`[ERROR: ${e.error}] ${e.message || ''}`, '#ff4444');
+      };
+
+      recognition.onnomatch = () => {
+        log('[NOMATCH] No speech recognized.', '#ffaa00');
+      };
+
+      window.currentRecognition = recognition;
+      return recognition;
+    }
+
+    const checkAvailability = async () => {
+      const recognition = resetRecognitionSession();
+      if (!recognition) return;
+
+      let options = {
+        langs: [recognition.lang],
+        processLocally: true,
+        quality: qualitySelect.value || undefined,
+      };
+      const optionsStr = `${recognition.lang} - ${options.quality}`;
+      if (typeof SpeechRec?.available === 'function') {
+        try {
+          const availability = await SpeechRec.available(options);
+          log(`[AVAILABILITY] ${optionsStr} -> ${availability}`, '#aaffaa');
+          if (availability === 'downloadable') {
+            log(`[DOWNLOADING] ${optionsStr}`, '#aaffaa');
+            const installed = typeof SpeechRec.install === 'function' ? await SpeechRec.install(options) : false;
+            log(`[INSTALL] ${optionsStr} ${installed ? 'SUCCEEDED' : 'FAILED'}`, '#aaffaa');
+          }
+        } catch (err) {
+          log(`[AVAILABILITY ERROR] Options: ${optionsStr} -> ${err.message || err}`, '#ff4444');
+        }
+      } else {
+        log(`[AVAILABILITY] SpeechRecognition.available() is not supported. Options: ${optionsStr}`, '#aaaaaa');
+      }
+    };
+
+    qualitySelect.addEventListener('change', checkAvailability);
+    txtLang.addEventListener('change', checkAvailability);
+    checkAvailability();
+
+    // Centralized Initialization
+    async function startVisualizationAndMic() {
+      // 1. Initialize Web Audio API for the Canvas (Only once)
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const source = audioCtx.createMediaStreamSource(stream);
+          source.connect(analyser);
+          requestAnimationFrame(draw);
+        } catch (err) {
+          alert('Could not start microphone: ' + err);
+          return;
+        }
+      }
+
+      // 2. Start Speech API
+      if (!isRecognizing) {
+        try {
+          if (!window.currentRecognition) {
+            resetRecognitionSession();
+          }
+          window.currentRecognition.start();
+        } catch (e) {
+          log(`[ERROR] Failed to start recognition: ${e.message}`, '#ff4444');
+        }
+      }
+    }
+
+    // Canvas Rendering Loop
+    function draw() {
+      requestAnimationFrame(draw);
+      const currentTime = performance.now();
+
+      timelineStartTime ??= currentTime;
+
+      if (isRecognizing) {
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = (dataArray[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        audioHistory.push({ time: currentTime, rms });
+
+        if (autoScroll) {
+          viewEndTime = currentTime;
+        }
+      } else {
+        if (!viewEndTime) {
+          viewEndTime = stoppedViewEndTime || currentTime;
+        }
+      }
+
+      const currentEffectiveTime = isRecognizing ? currentTime : (stoppedViewEndTime || currentTime);
+      const minTime = timelineStartTime;
+      const maxTime = currentEffectiveTime;
+      const minViewEnd = minTime + DURATION_MS;
+
+      // Update scrollbar UI
+      if (maxTime > minViewEnd) {
+        timelineScroll.disabled = false;
+        if (autoScroll && isRecognizing) {
+          timelineScroll.value = 1000;
+        } else {
+          const scrollFrac = Math.max(0, Math.min(1, (viewEndTime - minViewEnd) / (maxTime - minViewEnd)));
+          timelineScroll.value = Math.round(scrollFrac * 1000);
+        }
+        const viewStartSec = Math.max(0, (viewEndTime - DURATION_MS - timelineStartTime) / 1000).toFixed(1);
+        const viewEndSec = Math.max(0, (viewEndTime - timelineStartTime) / 1000).toFixed(1);
+        const totalSec = Math.max(0, (maxTime - timelineStartTime) / 1000).toFixed(1);
+        timelineTimeInfo.textContent = `${viewStartSec}s - ${viewEndSec}s (of ${totalSec}s)${autoScroll ? ' [Live]' : ''}`;
+      } else {
+        timelineScroll.value = 1000;
+        timelineScroll.disabled = true;
+        const totalSec = Math.max(0, (maxTime - timelineStartTime) / 1000).toFixed(1);
+        timelineTimeInfo.textContent = `0.0s - ${totalSec}s${autoScroll ? ' [Live]' : ''}`;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Waveform
+      ctx.fillStyle = '#00e5ff';
+      const waveCenterY = 150;
+
+      const visiblePoints = audioHistory.filter(p => p.time >= viewEndTime - DURATION_MS - 200 && p.time <= viewEndTime + 200);
+
+      ctx.beginPath();
+      ctx.moveTo(0, waveCenterY);
+      for (const point of visiblePoints) {
+        const x = canvas.width - ((viewEndTime - point.time) / DURATION_MS) * canvas.width;
+        const h = point.rms * 300;
+        ctx.lineTo(x, waveCenterY - h);
+      }
+      for (let i = visiblePoints.length - 1; i >= 0; i--) {
+        const point = visiblePoints[i];
+        const x = canvas.width - ((viewEndTime - point.time) / DURATION_MS) * canvas.width;
+        const h = point.rms * 300;
+        ctx.lineTo(x, waveCenterY + h);
+      }
+      ctx.fill();
+
+      // Timeline time ticks
+      ctx.fillStyle = '#888';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'center';
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 1;
+
+      const leftTime = viewEndTime - DURATION_MS;
+      const rightTime = viewEndTime;
+      const firstTickSec = Math.floor(leftTime / 1000);
+      const lastTickSec = Math.ceil(rightTime / 1000);
+
+      for (let sec = firstTickSec; sec <= lastTickSec; sec++) {
+        const tickTimeMs = sec * 1000;
+        if (tickTimeMs >= leftTime && tickTimeMs <= rightTime) {
+          const x = canvas.width - ((viewEndTime - tickTimeMs) / DURATION_MS) * canvas.width;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, 30);
+          ctx.stroke();
+          ctx.fillText(`${(tickTimeMs / 1000).toFixed(1)}s`, x, 45);
+        }
+      }
+
+      // Endpointer Markers
+      ctx.lineWidth = 1;
+      for (let i = 0; i < endpointerMarkers.length; i++) {
+        const marker = endpointerMarkers[i];
+        const x = canvas.width - ((viewEndTime - marker.time) / DURATION_MS) * canvas.width;
+        if (x < -100 || x > canvas.width + 100) continue;
+
+        const textY = 60 + (i % 3) * 15;
+
+        ctx.fillStyle = '#ff9800';
+        ctx.strokeStyle = '#ff9800';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+
+        ctx.fillText(marker.name, x, textY);
+
+        ctx.beginPath();
+        ctx.moveTo(x, textY + 5);
+        ctx.lineTo(x, waveCenterY - 40);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x, waveCenterY - 30);
+        ctx.lineTo(x - 4, waveCenterY - 40);
+        ctx.lineTo(x + 4, waveCenterY - 40);
+        ctx.fill();
+      }
+
+      // Transcripts
+      ctx.lineWidth = 1;
+      for (const t of transcripts) {
+        const first = t.results[0];
+        const latest = t.results[t.results.length - 1];
+
+        const textTargetX = canvas.width - ((viewEndTime - first.timeReceived) / DURATION_MS) * canvas.width;
+        const textY = 270 + (t.id % 3) * 25;
+
+        const words = t.words || [];
+        ctx.font = latest.isFinal ? 'bold 14px sans-serif' : 'italic 14px sans-serif';
+        const spaceWidth = ctx.measureText(' ').width;
+        const suffix = ` (${t.results.length} updates)`;
+        const suffixWidth = ctx.measureText(suffix).width;
+
+        if (words.length > 0) {
+          let wordsTotalWidth = 0;
+          for (let i = 0; i < words.length; i++) {
+            wordsTotalWidth += ctx.measureText(words[i].text).width;
+            if (i < words.length - 1) wordsTotalWidth += spaceWidth;
+          }
+
+          const totalWidth = wordsTotalWidth + suffixWidth;
+          let curX = textTargetX - totalWidth / 2;
+
+          ctx.textAlign = 'left';
+          for (let i = 0; i < words.length; i++) {
+            const w = words[i];
+            ctx.fillStyle = getLatencyColor(w.latency);
+            ctx.fillText(w.text, curX, textY);
+            curX += ctx.measureText(w.text).width + spaceWidth;
+          }
+
+          ctx.fillStyle = latest.isFinal ? '#ffffff' : '#888888';
+          ctx.fillText(suffix, curX - spaceWidth, textY);
+        } else {
+          ctx.textAlign = 'center';
+          ctx.fillStyle = latest.isFinal ? '#ffffff' : '#aaaaaa';
+          ctx.fillText(`${latest[0].transcript.trim()}${suffix}`, textTargetX, textY);
+        }
+
+        const drawArrow = (targetTime, color) => {
+          if (typeof targetTime !== 'number' || isNaN(targetTime)) return;
+          const arrowX = canvas.width - ((viewEndTime - targetTime) / DURATION_MS) * canvas.width;
+          ctx.strokeStyle = color;
+          ctx.fillStyle = color;
+
+          ctx.beginPath();
+          ctx.moveTo(textTargetX, textY - 18);
+          ctx.lineTo(arrowX, waveCenterY + 40);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(arrowX, waveCenterY + 30);
+          ctx.lineTo(arrowX - 4, waveCenterY + 40);
+          ctx.lineTo(arrowX + 4, waveCenterY + 40);
+          ctx.fill();
+        };
+
+        for (const r of t.results) {
+          // Result received timestamp
+          drawArrow(r.timeReceived, r.isFinal ? '#6666ff' : '#aaaaaa');
+
+          // speechStartTime (absoluteSpeechStart)
+          if (typeof r.absoluteSpeechStart === 'number') {
+            drawArrow(r.absoluteSpeechStart, '#00ccff');
+          }
+
+          // speechEndTime (absoluteSpeechEnd)
+          if (typeof r.absoluteSpeechEnd === 'number') {
+            drawArrow(r.absoluteSpeechEnd, '#ff00ff');
+          }
+        }
+      }
+    }
+
+    // Timeline Scrollbar events
+    timelineScroll.oninput = () => {
+      autoScroll = false;
+      const currentNow = isRecognizing ? performance.now() : (stoppedViewEndTime || performance.now());
+      const minTime = timelineStartTime || (currentNow - DURATION_MS);
+      const maxTime = currentNow;
+      const minViewEnd = minTime + DURATION_MS;
+      if (maxTime > minViewEnd) {
+        const fraction = timelineScroll.value / 1000;
+        viewEndTime = minViewEnd + fraction * (maxTime - minViewEnd);
+      } else {
+        viewEndTime = maxTime;
+      }
+    };
+
+    btnLive.onclick = () => {
+      autoScroll = true;
+      const currentNow = isRecognizing ? performance.now() : (stoppedViewEndTime || performance.now());
+      viewEndTime = currentNow;
+      timelineScroll.value = 1000;
+    };
+
+    // Canvas Drag and Wheel Scrolling
+    let isDraggingCanvas = false;
+    let dragStartX = 0;
+    let dragStartViewEndTime = 0;
+
+    canvas.addEventListener('mousedown', (e) => {
+      isDraggingCanvas = true;
+      dragStartX = e.clientX;
+      dragStartViewEndTime = viewEndTime;
+      autoScroll = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingCanvas) return;
+      const dx = e.clientX - dragStartX;
+      const dt = (dx / canvas.clientWidth) * DURATION_MS;
+      const currentNow = isRecognizing ? performance.now() : (stoppedViewEndTime || performance.now());
+      const minTime = timelineStartTime || (currentNow - DURATION_MS);
+      const minViewEnd = minTime + DURATION_MS;
+      viewEndTime = Math.max(minViewEnd, Math.min(currentNow, dragStartViewEndTime - dt));
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDraggingCanvas = false;
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      autoScroll = false;
+      const dt = (e.deltaX || e.deltaY) * (DURATION_MS / 1000);
+      const currentNow = isRecognizing ? performance.now() : (stoppedViewEndTime || performance.now());
+      const minTime = timelineStartTime || (currentNow - DURATION_MS);
+      const minViewEnd = minTime + DURATION_MS;
+      viewEndTime = Math.max(minViewEnd, Math.min(currentNow, viewEndTime + dt));
+    }, { passive: false });
+
+    // Toggle Button Logic
+    btnMic.onclick = () => {
+      if (isRecognizing) {
+        window.currentRecognition?.stop();
+      } else {
+        startVisualizationAndMic();
+      }
+    };
+
+    // Audio File Button Logic
+    btnFile.onclick = () => {
+      log('[INFO] Playing audio file. Ensure speakers are on!', '#00e5ff');
+      audioPlayer.currentTime = 0;
+      audioPlayer.play().catch(e => log(`[ERROR] Audio playback failed: ${e.message}`, '#ff4444'));
+
+      // Auto-start transcription if it isn't running
+      if (!isRecognizing) {
+        startVisualizationAndMic();
+      }
+    };
+  </script>
+</body>
+
+</html>
